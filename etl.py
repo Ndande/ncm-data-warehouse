@@ -27,6 +27,7 @@ def transform(df):
     df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
     df['SITE'] = df['SITE'].str.strip().str.title()  # Remove leading/trailing whitespace and capitalize
     df['SUPPLIER'] = df['SUPPLIER'].str.strip().str.title()  # Remove leading/trailing whitespace and capitalize
+    df['VEHICLE NUMBER'] = df['VEHICLE NUMBER'].str.strip()  # Remove leading/trailing whitespace 
     df['T PRICE'] = pd.to_numeric(df['T PRICE'], errors='coerce')  # Convert to numeric, set errors to NaN
     df['U PRICE'] = pd.to_numeric(df['U PRICE'], errors='coerce')  # Convert to numeric, set errors to NaN
     df_clean = df.dropna(subset=['SITE', 'SUPPLIER', 'T PRICE'])  # Drop rows with NaN in critical columns
@@ -68,6 +69,48 @@ def load_dim_supplier(df, conn):
     cursor.close()
     return supplier_map
 
+def load_dim_vehicle(df, conn):
+    cursor = conn.cursor()
+    # Insert UNASSIGNED row first as a guaranteed fallback
+    cursor.execute("""
+        INSERT INTO dim_vehicle (code_parc, designation)
+        VALUES (%s, %s)
+        ON CONFLICT (code_parc) DO NOTHING
+    """, ('UNASSIGNED', 'Stock / bulk / unidentified purchase'))
+    #Get unique vehicles from the dataframe
+    vehicles = df['VEHICLE NUMBER'].dropna().unique()
+    #Insert each vehicle if it does not exist
+    for vehicle in vehicles:
+        cursor.execute("""
+            INSERT INTO dim_vehicle (code_parc)
+            VALUES (%s)
+            ON CONFLICT (code_parc) DO NOTHING
+        """, (vehicle,))
+    conn.commit()
+    #Build a mapping of vehicle names to their IDs
+    cursor.execute("SELECT code_parc, id FROM dim_vehicle")
+    vehicle_map = {row[0]: row[1] for row in cursor.fetchall()}
+    cursor.close()
+    return vehicle_map
+
+def load_dim_date(df, conn):
+    cursor = conn.cursor()
+    #Get unique dates from the dataframe
+    dates = df['DATE'].dropna().unique()
+    #Insert each date if it does not exist
+    for date in dates:
+        cursor.execute("""
+            INSERT INTO dim_date (full_date, day, month, month_name, quarter, year, day_of_week)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (full_date) DO NOTHING
+        """, (date, date.day, date.month, date.strftime("%B"), (date.month - 1) // 3 + 1, date.year, date.strftime("%A")))
+    conn.commit()
+    #Build a mapping of dates to their IDs
+    cursor.execute("SELECT full_date, id FROM dim_date")
+    date_map = {row[0]: row[1] for row in cursor.fetchall()}
+    cursor.close()
+    return date_map
+
 if __name__ == "__main__":
     conn = get_connection()
     if conn:
@@ -76,6 +119,12 @@ if __name__ == "__main__":
         df = transform(df)
         site_map = load_dim_site(df, conn)
         supplier_map = load_dim_supplier(df, conn)
+        vehicle_map = load_dim_vehicle(df, conn)
+        date_map = load_dim_date(df, conn)
+        print(f"Vehicles loaded: {len(vehicle_map)}")
+        print(f"Dates loaded: {len(date_map)}")
         print(site_map)
         print(supplier_map)
+        print(vehicle_map)
+        print(date_map)
         conn.close()
