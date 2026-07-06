@@ -117,7 +117,7 @@ def load_fact_spare_parts(df, conn, site_map, supplier_map, vehicle_map, date_ma
         site_id = site_map.get(row['SITE'])
         supplier_id = supplier_map.get(row['SUPPLIER'])
         vehicle_id = vehicle_map.get(row['VEHICLE NUMBER'], vehicle_map.get('UNASSIGNED'))  # Default to UNASSIGNED if not found
-        date_id = date_map.get(row['DATE'])
+        date_id = date_map.get(row['DATE'].date() if pd.notna(row['DATE']) else None)
         
         cursor.execute("""
             INSERT INTO fact_spare_parts (date_id, vehicle_id, site_id, supplier_id, items, payment_method, u_price, qte, t_price)
