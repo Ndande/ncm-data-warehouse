@@ -111,6 +111,21 @@ def load_dim_date(df, conn):
     cursor.close()
     return date_map
 
+def load_fact_spare_parts(df, conn, site_map, supplier_map, vehicle_map, date_map):
+    cursor = conn.cursor()
+    for index, row in df.iterrows():
+        site_id = site_map.get(row['SITE'])
+        supplier_id = supplier_map.get(row['SUPPLIER'])
+        vehicle_id = vehicle_map.get(row['VEHICLE NUMBER'], vehicle_map.get('UNASSIGNED'))  # Default to UNASSIGNED if not found
+        date_id = date_map.get(row['DATE'])
+        
+        cursor.execute("""
+            INSERT INTO fact_spare_parts (date_id, vehicle_id, site_id, supplier_id, items, payment_method, u_price, qte, t_price)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (date_id, vehicle_id, site_id, supplier_id, row['ITEMS'], row['REMARK'], row['U PRICE'], row['QTE'], row['T PRICE']))
+    conn.commit()
+    cursor.close()
+
 if __name__ == "__main__":
     conn = get_connection()
     if conn:
@@ -121,10 +136,12 @@ if __name__ == "__main__":
         supplier_map = load_dim_supplier(df, conn)
         vehicle_map = load_dim_vehicle(df, conn)
         date_map = load_dim_date(df, conn)
+        load_fact_spare_parts(df, conn, site_map, supplier_map, vehicle_map, date_map)
         print(f"Vehicles loaded: {len(vehicle_map)}")
         print(f"Dates loaded: {len(date_map)}")
         print(site_map)
         print(supplier_map)
         print(vehicle_map)
         print(date_map)
+        print("Facts loaded successfully")
         conn.close()
