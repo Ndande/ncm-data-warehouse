@@ -28,6 +28,7 @@ def transform(df):
     df['SITE'] = df['SITE'].str.strip().str.title()  # Remove leading/trailing whitespace and capitalize
     df['SUPPLIER'] = df['SUPPLIER'].str.strip().str.title()  # Remove leading/trailing whitespace and capitalize
     df['VEHICLE NUMBER'] = df['VEHICLE NUMBER'].str.strip()  # Remove leading/trailing whitespace 
+    df['ITEMS'] = df['ITEMS'].astype(str).str.strip()  # Remove leading/trailing whitespace
     df['T PRICE'] = pd.to_numeric(df['T PRICE'], errors='coerce')  # Convert to numeric, set errors to NaN
     df['U PRICE'] = pd.to_numeric(df['U PRICE'], errors='coerce')  # Convert to numeric, set errors to NaN
     df_clean = df.dropna(subset=['SITE', 'SUPPLIER', 'T PRICE'])  # Drop rows with NaN in critical columns
@@ -117,12 +118,22 @@ def load_fact_spare_parts(df, conn, site_map, supplier_map, vehicle_map, date_ma
         site_id = site_map.get(row['SITE'])
         supplier_id = supplier_map.get(row['SUPPLIER'])
         vehicle_id = vehicle_map.get(row['VEHICLE NUMBER'], vehicle_map.get('UNASSIGNED'))  # Default to UNASSIGNED if not found
-        date_id = date_map.get(row['DATE'].date() if pd.notna(row['DATE']) else None)
+        date_key = row['DATE'].date() if pd.notna(row['DATE']) else None
+        date_id = date_map.get(date_key)
         
         cursor.execute("""
-            INSERT INTO fact_spare_parts (date_id, vehicle_id, site_id, supplier_id, items, payment_method, u_price, qte, t_price)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (date_id, vehicle_id, site_id, supplier_id, row['ITEMS'], row['REMARK'], row['U PRICE'], row['QTE'], row['T PRICE']))
+    INSERT INTO fact_spare_parts (date_id, vehicle_id, site_id, supplier_id, items, payment_method, u_price, qte, t_price)
+    SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s
+    WHERE NOT EXISTS (
+        SELECT 1 FROM fact_spare_parts
+        WHERE (date_id = %s OR (date_id IS NULL AND %s IS NULL))
+        AND vehicle_id = %s
+        AND site_id = %s
+        AND supplier_id = %s
+        AND items = %s
+    )
+""", (date_id, vehicle_id, site_id, supplier_id, row['ITEMS'], row['REMARK'], row['U PRICE'], row['QTE'], row['T PRICE'],
+      date_id, date_id, vehicle_id, site_id, supplier_id, row['ITEMS']))
     conn.commit()
     cursor.close()
 
